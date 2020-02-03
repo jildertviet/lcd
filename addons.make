@@ -1,0 +1,11 @@
+ofxAssimpModelLoader
+ofxCsv
+ofxEasing
+ofxGui
+ofxJSON
+ofxMSAOpenCL
+ofxMidi
+ofxOpenCv
+ofxOsc
+ofxPostProcessing
+ofxSyphon
