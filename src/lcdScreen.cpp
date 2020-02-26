@@ -28,14 +28,17 @@ lcdScreen::lcdScreen(char id, glm::vec2 loc, glm::vec2 size){
 void lcdScreen::update(){
     if(mode == 0){
         for(char i=0; i<2; i++){
+            if(laggers[i].bActive){
+                addValues[i] = laggers[i].process();
+            }
             int maxValue = 0;
             for(char j=0; j<8; j++){
                 backlightEnvelopes[i][j].process();
                 if(backlightEnvelopes[i][j].value > maxValue)
                     maxValue = backlightEnvelopes[i][j].value;
             }
-            if(addValue > maxValue) // If the addValue is set (!=0), use this as max value
-                maxValue = addValue;
+            if(addValues[i] > maxValue) // If the addValue is set (!=0), use this as max value
+                maxValue = addValues[i];
 
             backLightValues[i] = maxValue;
         }
@@ -125,30 +128,135 @@ void lcdScreen::backLightEnv(char backLightId, vector<float> values, vector<floa
 }
 
 void lcdScreen::parseMsg(ofxOscMessage& m){
-    switch(m.getArgAsInt(1)){
-        case 0: // SetVal
-                addValue = m.getArgAsInt(2);
+    if(m.getArgType(1) == 98){ // New, raw syntax: same as send to ESP32
+        cout << "Raw char buffer" << endl;
+        ofBuffer msg = m.getArgAsBlob(1);
+        unsigned char* data = new unsigned char[msg.size()];
+        for(char i=0; i<msg.size(); i++){
+            data[i] = (unsigned char)msg.getData()[i];
+            cout << (int)data[i] << " ";
+        }
+        int numMsgs = (data[6]);
+//        cout << "\nnumMsgs: " << numMsgs << endl;
+        unsigned short readPos = 7; // Starts @ length-byte of msg
+        for(int i=0; i<numMsgs; i++){
+            parseArray(data, readPos);
+            unsigned char msgLength = (data[readPos]);
+//            cout << "msgLength: " << (int)msgLength << endl;
+            readPos += msgLength;
+        }
+        cout << endl;
+        delete[] data;
+    } else{
+        switch(m.getArgAsInt(1)){
+            case 0: // SetVal
+                    addValues[0] = addValues[1] = m.getArgAsInt(2);
+                break;
+            case 1: // SetValLag
+    //            ofSerial
+                break;
+            case 2: // Whole backlight env
+                // Should this reset the addVal!?
+                backLightEnv(
+                             0,
+                             vector<float>{m.getArgAsFloat(2), m.getArgAsFloat(3), m.getArgAsFloat(4), m.getArgAsFloat(5)},
+                             vector<float>{m.getArgAsFloat(6), m.getArgAsFloat(7), m.getArgAsFloat(8)}
+                             );
+                backLightEnv(
+                             1,
+                             vector<float>{m.getArgAsFloat(2), m.getArgAsFloat(3), m.getArgAsFloat(4), m.getArgAsFloat(5)},
+                             vector<float>{m.getArgAsFloat(6), m.getArgAsFloat(7), m.getArgAsFloat(8)}
+                             );
+                break;
+            case 3:
+                fillRect(m.getArgAsFloat(2), m.getArgAsFloat(3), m.getArgAsFloat(4), m.getArgAsFloat(5), m.getArgAsInt(6), m.getArgAsInt(7), m.getArgAsInt(8));
+                break;
+        }
+    }
+}
+
+void lcdScreen::parseArray(unsigned char* buffer, int readPos){
+    unsigned short delayTime;
+    memcpy(&delayTime, buffer + readPos + 1, 2);
+    unsigned char msgId = *(buffer + readPos + 3);
+    unsigned char type = *(buffer + readPos + 4);
+    switch(type){
+        case MSG_TEST:
             break;
-        case 1: // SetValLag
-//            ofSerial
+        case MSG_BL_SET:{
+            cout << "MSG_BL_SET" << endl;
+            unsigned char ledID = *(buffer + readPos + 5);
+            unsigned char value = *(buffer + readPos + 6);
+            if(ledID == 2){ // Both
+                addValues[0] = value;
+                addValues[1] = value;
+            } else{
+                addValues[ledID] = value;
+            }
+        }
             break;
-        case 2: // Whole backlight env
-            // Should this reset the addVal!?
+        case MSG_BL_LAG:{
+            // Msg: led-id, value, lagTime[0], lagTime[1]
+            unsigned char ledID = *(buffer + readPos + 5);
+            unsigned char value = *(buffer + readPos + 6);
+            unsigned short lagTime;
+            memcpy(&lagTime, buffer + readPos + 7, 2);
+            if(ledID == 2){
+                for(char i=0; i<2; i++)
+                    laggers[i].trigger(addValues[i], value, lagTime);
+            } else{
+                laggers[ledID].trigger(addValues[ledID], value, lagTime);
+            }
+        }
+            break;
+        case MSG_BL_ENV:{
+            unsigned char ledID = *(buffer + readPos + 5);
+            unsigned short attack, sustain, release;
+            unsigned char value = *(buffer + readPos + 12);
+            memcpy(&attack, buffer + readPos + 6, 2);
+            memcpy(&sustain, buffer + readPos + 8, 2);
+            memcpy(&release, buffer + readPos + 10, 2);
+            if(ledID == 2){
+                for(char i=0; i<2; i++){
+                    backLightEnv(
+                                 i,
+                                 vector<float>{0, (float)value, (float)value, 0},
+                                 vector<float>{(float)attack, (float)sustain, (float)release}
+                                 );
+                }
+            } else{
             backLightEnv(
-                         0,
-                         vector<float>{m.getArgAsFloat(2), m.getArgAsFloat(3), m.getArgAsFloat(4), m.getArgAsFloat(5)},
-                         vector<float>{m.getArgAsFloat(6), m.getArgAsFloat(7), m.getArgAsFloat(8)}
+                         ledID,
+                         vector<float>{0, (float)value, (float)value, 0},
+                         vector<float>{(float)attack, (float)sustain, (float)release}
                          );
-            backLightEnv(
-                         1,
-                         vector<float>{m.getArgAsFloat(2), m.getArgAsFloat(3), m.getArgAsFloat(4), m.getArgAsFloat(5)},
-                         vector<float>{m.getArgAsFloat(6), m.getArgAsFloat(7), m.getArgAsFloat(8)}
-                         );
+            }
+        }
             break;
-        case 3:
-            fillRect(m.getArgAsFloat(2), m.getArgAsFloat(3), m.getArgAsFloat(4), m.getArgAsFloat(5), m.getArgAsInt(6), m.getArgAsInt(7), m.getArgAsInt(8));
+        case MSG_LCD_FILLRECT_SHOW:
+        case MSG_LCD_FILLRECT:{
+            unsigned char x = *(buffer + readPos + 5);
+            unsigned char y = *(buffer + readPos + 6);
+            unsigned char w = *(buffer + readPos + 7);
+            unsigned char h = *(buffer + readPos + 8);
+            unsigned char r = *(buffer + readPos + 9);
+            unsigned char g = *(buffer + readPos + 10);
+            unsigned char b = *(buffer + readPos + 11);
+            fillRect(x / 255., y / 255., w / 255., h / 255., r, g, b); // Unsigned char becomes float ratio, gets multiplied by size[2];
+        }
+            break;
+        case MSG_OTA_SINGLE:
+            break;
+        case MSG_OTA_SERVER:
+            break;
+        case EVENT_RECT:
+            break;
+        case EVENT_EXPRAND:
             break;
     }
+//    cout << "delayTime: " << delayTime << endl;
+//    cout << "msgID: " << (int)msgId << endl;
+    
 }
 
 void lcdScreen::fillRect(float x, float y, float w, float h, int r, int g, int b){

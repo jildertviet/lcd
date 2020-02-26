@@ -76,6 +76,8 @@ class ofApp : public ofBaseApp{
     ofxOscReceiver SCreceiver;
     ofxOscReceiver spaceNavReceiver;
     ofxOscSender GUIsender;
+    ofxOscSender SCsenderII;
+    bool bSendToSC = true;
     ofxOscSender SCsender;
     ofxOscMessage msg;
     bool bSCClientSet = false;
@@ -107,4 +109,5 @@ class ofApp : public ofBaseApp{
         "verses",
         "model"
     };
+    bool bShowFbo = false;
 };

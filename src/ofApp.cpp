@@ -7,6 +7,7 @@ void ofApp::setup(){
     
     visualizer = new Visualizer(size);
     visualizer->fitFadeScreen(size); // Also on window-resize!?
+    
 
     smallerFbo.allocate(visualizer->fbo.getWidth() / 10, visualizer->fbo.getHeight() / 10, GL_RGBA); // Doesn't really make it faster...
     p.allocate(smallerFbo.getWidth(), smallerFbo.getHeight(), 4);
@@ -21,7 +22,8 @@ void ofApp::setup(){
                                     )
                           );
         screens.back().p = &p;
-        screens.back().pixelReadPos = (screens.back().loc/size) * glm::vec2(p.getWidth(), p.getHeight());
+        screens.back().sender = &SCsenderII;
+        screens.back().pixelReadPos = ((screens.back().loc + (screens.back().size * 0.5))/size) * glm::vec2(p.getWidth(), p.getHeight());
     }
     cout << "num screens: " << screens.size() << endl;
     newScreenGUI.setup("Add new screen");
@@ -40,6 +42,8 @@ void ofApp::setup(){
     
     GUIreceiver.setup(6060);
     SCreceiver.setup(6061);
+    SCsenderII.setup("127.0.0.1", 3456);
+    
     spaceNavReceiver.setup(8609);
     visualizer->receiver.setup(4040);
     parser->SCsender = &SCsender;
@@ -74,16 +78,14 @@ void ofApp::update(){
 //        receiveSpaceNav(msg);
     }
 
-    
     while(receiver.hasWaitingMessages()){
         ofxOscMessage m;
         receiver.getNextMessage(m);
-        if(m.getAddress() == "/setMode"){
-            for(int i=0; i<screens.size(); i++){
+        if(m.getAddress() == "/setMode"){ // Global control msg from SC
+            for(int i=0; i<screens.size(); i++)
                 screens[i].mode = m.getArgAsInt(0);
-            }
         } else{
-            screens[m.getArgAsInt(0)].parseMsg(m);
+            screens[m.getArgAsInt(0)].parseMsg(m); // Old syntax
         }
     }
     
@@ -95,26 +97,37 @@ void ofApp::update(){
     
     for(int i=0; i<screens.size(); i++)
         screens[i].update();
+    
+    if(bSendToSC){
+        // Send all values per screen as an array?
+        ofxOscMessage m;
+        m.setAddress("/fromVisualizer");
+        for(int i=0; i<screens.size(); i++){
+            m.addIntArg(screens[i].backLightValues[0]);
+            m.addIntArg(screens[i].backLightValues[1]);
+        }
+        SCsenderII.sendMessage(m);
+    }
+    
+//    if(ofGetFrameNum() % 60 == 0){
+//        cout << "frameRate: " << ofToString(ofGetFrameRate()) << endl;
+//    }
 }
 
 //--------------------------------------------------------------
 void ofApp::draw(){
     ofBackground(0);
 //    visualizer->display();
-//    ofSetColor(255, 10);
-//    ofFill();
-//    ofDrawRectangle(0, 0, ofGetWidth(), ofGetHeight()); // Floor
-//    ofPushMatrix();
-//        ofTranslate(glm::vec3(0, 0, 1));
+
+    if(bShowFbo)
+        smallerFbo.draw(0, 0, ofGetWidth(), ofGetHeight());
     for(int i=0; i<screens.size(); i++)
         screens[i].display();
-//    ofPopMatrix();
     
     ofSetColor(255);
     if(bDisplayGui)
         newScreenGUI.draw();
     
-//    syphonClient.draw(50, 50);
 }
 
 void ofApp::exit(){
@@ -172,6 +185,10 @@ void ofApp::keyPressed(int key){
             for(int i=0; i<screens.size(); i++){
                 screens[i].bDisplayInfo = !screens[i].bDisplayInfo;
             }
+        }
+            break;
+        case 'v':{
+            bShowFbo = !bShowFbo;
         }
             break;
     }
@@ -258,6 +275,9 @@ void ofApp::addNewScreen(){
     glm::vec2 loc = glm::vec2((int)locXInput, (int)locYInput);
     glm::vec2 size = glm::vec2((int)sizeXInput, (int)sizeYInput) * 2;
     screens.push_back(lcdScreen(id, loc, size));
+    screens.back().p = &p;
+    screens.back().sender = &SCsenderII;
+    screens.back().pixelReadPos = (screens.back().loc/size) * glm::vec2(p.getWidth(), p.getHeight());
 }
 
 void ofApp::removeSelected(){
