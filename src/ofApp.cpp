@@ -34,6 +34,9 @@ void ofApp::setup(){
     newScreenGUI.add(sizeYInput.setup("sizeY", 30));
     newScreenGUI.add(submitNewButton.setup("submit"));
     submitNewButton.addListener(this, &ofApp::addNewScreen);
+    
+    gui.setup("");
+    gui.add(contrast.setup("contrast", 1, 0, 10.));
 //    std::exit(0);
     ofSetFrameRate(60);
     receiver.setup(5555);
@@ -48,6 +51,9 @@ void ofApp::setup(){
     visualizer->receiver.setup(4040);
     parser->SCsender = &SCsender;
     visualizer->SCsender = &SCsender;
+    if(!shader.load("shaders/brightnessAndSaturation")){
+        cout << "Failed to load shader" << endl;
+    }
 }
 
 //--------------------------------------------------------------
@@ -84,6 +90,8 @@ void ofApp::update(){
         if(m.getAddress() == "/setMode"){ // Global control msg from SC
             for(int i=0; i<screens.size(); i++)
                 screens[i].mode = m.getArgAsInt(0);
+        } else if(m.getAddress() == "/setContrast"){
+            contrast = m.getArgAsFloat(0);
         } else{
             screens[m.getArgAsInt(0)].parseMsg(m); // Old syntax
         }
@@ -91,7 +99,11 @@ void ofApp::update(){
     
     visualizer->update();
     smallerFbo.begin();
+    shader.begin();
+        shader.setUniform1f("contrast", contrast);
+        shader.setUniform1f("brightness", shaderBrightnessAdd);
         visualizer->fbo.draw(0, 0, smallerFbo.getWidth(), smallerFbo.getHeight());
+        shader.end();
     smallerFbo.end();
     smallerFbo.readToPixels(p);
     
@@ -127,7 +139,8 @@ void ofApp::draw(){
     ofSetColor(255);
     if(bDisplayGui)
         newScreenGUI.draw();
-    
+    if(bDrawGui)
+        gui.draw();
 }
 
 void ofApp::exit(){
@@ -187,9 +200,11 @@ void ofApp::keyPressed(int key){
             }
         }
             break;
-        case 'v':{
+        case 'v':
             bShowFbo = !bShowFbo;
-        }
+            break;
+        case 'g':
+            bDrawGui = !bDrawGui;
             break;
     }
 }

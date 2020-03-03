@@ -110,4 +110,10 @@ class ofApp : public ofBaseApp{
         "model"
     };
     bool bShowFbo = false;
+    ofShader shader;
+    float shaderContrast = 1;
+    ofxPanel gui;
+    bool bDrawGui = true;
+    ofxFloatSlider contrast;
+    int shaderBrightnessAdd = 0;
 };
